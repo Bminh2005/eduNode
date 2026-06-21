@@ -32,7 +32,7 @@ export default function Home() {
     }
 
     await new Promise((r) => setTimeout(r, 250));
-    const roadmap = generateRoadmap(idea.trim(), lang);
+    const roadmap = await generateRoadmap(idea.trim(), lang);
     navigate("/result", { state: { roadmap } });
   }, [idea, loading, navigate, lang]);
 
@@ -117,9 +117,8 @@ export default function Home() {
                 ? "#EEF2F7"
                 : "linear-gradient(135deg, #6D28D9, #4F46E5)",
             color: !idea.trim() || loading ? "#94A3B8" : "white",
-            border: `1px solid ${
-              !idea.trim() || loading ? "rgba(15,23,42,0.06)" : "transparent"
-            }`,
+            border: `1px solid ${!idea.trim() || loading ? "rgba(15,23,42,0.06)" : "transparent"
+              }`,
             cursor: !idea.trim() || loading ? "not-allowed" : "pointer",
             boxShadow:
               idea.trim() && !loading ? "0 4px 14px rgba(109,40,217,0.3)" : "none",

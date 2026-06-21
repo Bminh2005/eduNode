@@ -1,33 +1,89 @@
-import { useState, useRef, useLayoutEffect, useEffect, useCallback } from "react";
+import { useState, useRef, useLayoutEffect, useEffect, useCallback, useMemo } from "react";
 import type { RoadmapData } from "../data/roadmap";
 
+interface PhaseLayout {
+  x: number;
+  y: number;
+  a: number;
+}
+
+function computePhaseLayout(phases: RoadmapData["phases"]): PhaseLayout[] {
+  const n = phases.length;
+  if (n === 0) return [];
+
+  const layout: PhaseLayout[] = new Array(n);
+  layout[0] = { x: -PHASE_DIST, y: 0, a: Math.PI };
+
+  const rightPhases = phases.slice(1);
+  if (rightPhases.length === 0) return layout;
+
+  const PADDING = 24;
+  // ⬇️ +1 để tính luôn slot cho nút "+"
+  const slotHeights = rightPhases.map(
+    (p) => (p.subtasks.length + 1) * SUB_SPREAD + PADDING
+  );
+  const totalHeight = slotHeights.reduce((a, b) => a + b, 0);
+
+  let cursor = -totalHeight / 2;
+  rightPhases.forEach((_, idx) => {
+    const h = slotHeights[idx];
+    const centerY = cursor + h / 2;
+    cursor += h;
+    const a = Math.atan2(centerY, PHASE_DIST);
+    layout[idx + 1] = { x: PHASE_DIST, y: centerY, a };
+  });
+
+  return layout;
+}
 // ── Layout constants ──────────────────────────────────────────────────────────
-const PHASE_DIST = 310;
-const SUB_ALONG  = 230;
-const SUB_SPREAD = 68;
+const PHASE_DIST = 340;
+const SUB_ALONG = 230;
+const SUB_SPREAD = 68; // tăng từ 68 → có thêm ~40px khoảng trống giữa các card
 
 const CW = 200, CH = 72;   // center card
 const PW = 168, PH = 72;   // phase card
-const SW = 162, SH = 50;   // subtask card
+const SW = 230, SH = 50;   // subtask card
 
 function phasePos(i: number, n: number) {
-  const a = (i / n) * 2 * Math.PI - Math.PI / 2;
+  if (i === 0) {
+    // Phase đầu tiên ở bên trái, nằm ngang
+    return { x: -PHASE_DIST, y: 0, a: Math.PI };
+  }
+
+  const rightCount = n - 1;
+
+  // Giới hạn góc xòe tối đa — càng nhiều phase thì xòe rộng hơn 1 chút,
+  // nhưng KHÔNG bao giờ vượt quá ±55° để tránh đâm thẳng lên/xuống
+  const maxSpreadDeg = Math.min(55, 20 + rightCount * 7);
+  const maxSpread = (maxSpreadDeg * Math.PI) / 180;
+
+  let a: number;
+  if (rightCount === 1) {
+    a = 0; // chỉ 1 phase bên phải → nằm ngang luôn, giống mũi giữa đinh ba
+  } else {
+    // Rải đều từ -maxSpread đến +maxSpread, mũi giữa luôn ở góc 0 (ngang)
+    a = -maxSpread + ((i - 1) / (rightCount - 1)) * (2 * maxSpread);
+  }
+
   return { x: Math.cos(a) * PHASE_DIST, y: Math.sin(a) * PHASE_DIST, a };
 }
 
-function subPos(px: number, py: number, a: number, j: number, total: number) {
-  const dx = Math.cos(a),  dy = Math.sin(a);
-  const ex = -dy,          ey = dx;            // perpendicular ("east" of direction)
-  const off = total === 0 ? 0 : (j - (total - 1) / 2) * SUB_SPREAD;
-  return { x: px + dx * SUB_ALONG + ex * off, y: py + dy * SUB_ALONG + ey * off };
+function subPos(px: number, py: number, _a: number, j: number, m: number) {
+  const dir = px >= 0 ? 1 : -1;
+  const baseX = px + dir * SUB_ALONG;
+
+  const total = m + 1; // m subtask + 1 nút "+"
+  const off = (j - (total - 1) / 2) * SUB_SPREAD;
+  return { x: baseX, y: py + off };
 }
 
-function addBtnPos(px: number, py: number, a: number, m: number) {
-  const dx = Math.cos(a), dy = Math.sin(a);
-  const ex = -dy, ey = dx;
-  if (m === 0) return { x: px + dx * SUB_ALONG, y: py + dy * SUB_ALONG };
-  const lastOff = ((m - 1) - (m - 1) / 2) * SUB_SPREAD;
-  return { x: px + dx * SUB_ALONG + ex * (lastOff + SUB_SPREAD), y: py + dy * SUB_ALONG + ey * (lastOff + SUB_SPREAD) };
+function addBtnPos(px: number, py: number, _a: number, m: number) {
+  const dir = px >= 0 ? 1 : -1;
+  const baseX = px + dir * SUB_ALONG;
+
+  const total = m + 1;
+  const off = (m - (total - 1) / 2) * SUB_SPREAD; // nút "+" = item cuối cùng (index = m)
+  return { x: baseX, y: py + off };
 }
 
 // ── Bezier connector ──────────────────────────────────────────────────────────
@@ -47,12 +103,12 @@ function Bezier({ x1, y1, x2, y2, color, w = 1.5 }: {
 // ── Tiny SVG check / close icons ──────────────────────────────────────────────
 const CheckIcon = () => (
   <svg width="9" height="9" viewBox="0 0 9 9">
-    <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="white" strokeWidth="1.8" fill="none" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 const XIcon = () => (
   <svg width="8" height="8" viewBox="0 0 8 8">
-    <path d="M1 1L7 7M7 1L1 7" stroke="#64748B" strokeWidth="1.6" strokeLinecap="round"/>
+    <path d="M1 1L7 7M7 1L1 7" stroke="#64748B" strokeWidth="1.6" strokeLinecap="round" />
   </svg>
 );
 
@@ -60,25 +116,26 @@ const XIcon = () => (
 export interface MindmapCanvasProps {
   data: RoadmapData;
   onToggleSubtask: (phaseId: string, subId: string) => void;
-  onAddSubtask:    (phaseId: string, title: string) => void;
-  addPlaceholder:  string;
-  addBtnLabel:     string;
-  hintText:        string;
+  onAddSubtask: (phaseId: string, title: string) => void;
+  addPlaceholder: string;
+  addBtnLabel: string;
+  hintText: string;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function MindmapCanvas({
   data, onToggleSubtask, onAddSubtask, addPlaceholder, addBtnLabel, hintText,
 }: MindmapCanvasProps) {
-  const wrapRef   = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [tf, setTf] = useState({ x: 0, y: 0, s: 0.85 });
-  const tfRef     = useRef(tf);
-  const dragRef   = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null);
+  const tfRef = useRef(tf);
+  const dragRef = useRef<{ ox: number; oy: number; tx: number; ty: number } | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
-  const [draft,    setDraft]    = useState("");
-  const inputRef  = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const n = data.phases.length;
 
+  const phaseLayout = useMemo(() => computePhaseLayout(data.phases), [data.phases]);
   // keep tfRef in sync
   useEffect(() => { tfRef.current = tf; }, [tf]);
 
@@ -87,6 +144,7 @@ export default function MindmapCanvas({
     const el = wrapRef.current;
     if (!el) return;
     const ro = new ResizeObserver(entries => {
+      if (!entries.length) return;
       const { width, height } = entries[0].contentRect;
       if (width > 0 && height > 0) {
         setTf({ x: width / 2, y: height / 2, s: Math.min(0.88, width / 940) });
@@ -115,7 +173,7 @@ export default function MindmapCanvas({
       const factor = e.deltaY > 0 ? 0.9 : 1.11;
       setTf(prev => {
         const ns = Math.min(Math.max(prev.s * factor, 0.18), 3.5);
-        const r  = ns / prev.s;
+        const r = ns / prev.s;
         return { x: mx + (prev.x - mx) * r, y: my + (prev.y - my) * r, s: ns };
       });
     };
@@ -134,10 +192,18 @@ export default function MindmapCanvas({
   }, [tf]);
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.ox;
-    const dy = e.clientY - dragRef.current.oy;
-    setTf(prev => ({ ...prev, x: dragRef.current!.tx + dx, y: dragRef.current!.ty + dy }));
+    const drag = dragRef.current;
+
+    if (!drag) return;
+
+    const dx = e.clientX - drag.ox;
+    const dy = e.clientY - drag.oy;
+
+    setTf(prev => ({
+      ...prev,
+      x: drag.tx + dx,
+      y: drag.ty + dy,
+    }));
   }, []);
 
   const onMouseUp = useCallback(() => { dragRef.current = null; }, []);
@@ -198,7 +264,7 @@ export default function MindmapCanvas({
       <svg className="absolute inset-0 w-full h-full pointer-events-none">
         <g transform={`translate(${tf.x},${tf.y}) scale(${tf.s})`}>
           {data.phases.map((phase, i) => {
-            const { x: px, y: py, a } = phasePos(i, n);
+            const { x: px, y: py, a } = phaseLayout[i];
             const m = phase.subtasks.length;
             const btnP = addBtnPos(px, py, a, m);
             return (
@@ -257,7 +323,7 @@ export default function MindmapCanvas({
 
         {/* Phase + subtask cards */}
         {data.phases.map((phase, i) => {
-          const { x: px, y: py, a } = phasePos(i, n);
+          const { x: px, y: py, a } = phaseLayout[i];
           const m = phase.subtasks.length;
           const done = phase.subtasks.filter(s => s.completed).length;
           const btnP = addBtnPos(px, py, a, m);
@@ -464,9 +530,9 @@ export default function MindmapCanvas({
         onMouseDown={stop}
       >
         {([
-          { label: "+",  title: "Zoom in",   fn: () => zoom(1.22) },
-          { label: "⌂",  title: "Reset view", fn: resetView },
-          { label: "−",  title: "Zoom out",  fn: () => zoom(0.82) },
+          { label: "+", title: "Zoom in", fn: () => zoom(1.22) },
+          { label: "⌂", title: "Reset view", fn: resetView },
+          { label: "−", title: "Zoom out", fn: () => zoom(0.82) },
         ] as const).map(({ label, title, fn }) => (
           <button
             key={label}
