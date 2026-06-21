@@ -1,6 +1,7 @@
 import { t } from "../i18n/translations";
 import type { Lang } from "../i18n/translations";
 
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 export interface SubTask {
   id: string;
   title: string;
@@ -122,7 +123,7 @@ export async function generateRoadmap(
   lang: Lang = "vi"
 ): Promise<RoadmapData> {
   try {
-    const res = await fetch("http://localhost:3000/api/roadmap", {
+    const res = await fetch("{API_URL}/api/roadmap", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idea, lang }),
