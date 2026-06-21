@@ -123,7 +123,7 @@ export async function generateRoadmap(
   lang: Lang = "vi"
 ): Promise<RoadmapData> {
   try {
-    const res = await fetch("{API_URL}/api/roadmap", {
+    const res = await fetch(`${API_URL}/api/roadmap`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ idea, lang }),
